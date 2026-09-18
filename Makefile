@@ -1,0 +1,55 @@
+APP     := Lobby
+BUNDLE  := build/$(APP).app
+BIN     := .build/release/$(APP)
+VERSION := $(shell /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Resources/Info.plist)
+
+# Override from the environment or a local .env that is not committed:
+#   make notarize TEAM_ID=XXXXXXXXXX SIGN_ID="Developer ID Application: ..." KEYCHAIN_PROFILE=lobby
+TEAM_ID          ?=
+SIGN_ID          ?=
+KEYCHAIN_PROFILE ?= lobby
+
+.PHONY: all test check app sign notarize dmg clean
+
+all: test app
+
+test:
+	swift test
+
+# Prints what Lobby sees on the current network. Exit 1 means action needed.
+check:
+	swift run -c release LobbyCheck
+
+app: $(BIN)
+	rm -rf $(BUNDLE)
+	mkdir -p $(BUNDLE)/Contents/MacOS $(BUNDLE)/Contents/Resources
+	cp Resources/Info.plist $(BUNDLE)/Contents/Info.plist
+	cp $(BIN) $(BUNDLE)/Contents/MacOS/$(APP)
+	@[ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns $(BUNDLE)/Contents/Resources/ || true
+	@echo "built $(BUNDLE) ($(VERSION))"
+
+$(BIN):
+	swift build -c release --product $(APP)
+
+# Hardened runtime is mandatory for notarization.
+sign: app
+	@test -n "$(SIGN_ID)" || (echo "set SIGN_ID"; exit 1)
+	codesign --force --deep --options runtime --timestamp \
+		--sign "$(SIGN_ID)" $(BUNDLE)
+	codesign --verify --strict --verbose=2 $(BUNDLE)
+
+dmg: sign
+	rm -f build/$(APP)-$(VERSION).dmg
+	hdiutil create -volname "$(APP)" -srcfolder $(BUNDLE) -ov -format UDZO \
+		build/$(APP)-$(VERSION).dmg
+
+# Requires a stored credential profile:
+#   xcrun notarytool store-credentials lobby --apple-id ... --team-id ... --password <app-specific>
+notarize: dmg
+	xcrun notarytool submit build/$(APP)-$(VERSION).dmg \
+		--keychain-profile $(KEYCHAIN_PROFILE) --wait
+	xcrun stapler staple build/$(APP)-$(VERSION).dmg
+	@echo "notarized build/$(APP)-$(VERSION).dmg"
+
+clean:
+	rm -rf build .build

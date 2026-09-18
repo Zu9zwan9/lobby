@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Lobby</string>
+    <key>CFBundleDisplayName</key>
+    <string>Lobby</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.bbmmtech.lobby</string>
+    <key>CFBundleExecutable</key>
+    <string>Lobby</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <!-- Menu bar only: no Dock icon, no main window. -->
+    <key>LSUIElement</key>
+    <true/>
+    <!-- Required on macOS 15+ before Lobby may contact the router at a private
+         address. Only the gateway-redirect fallback needs this; the CAPPORT path
+         talks to a public host and works without it. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Lobby checks your Wi-Fi router for a sign-in page when a network says you are online but nothing loads.</string>
+</dict>
+</plist>
