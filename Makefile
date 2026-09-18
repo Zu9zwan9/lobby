@@ -9,7 +9,20 @@ TEAM_ID          ?=
 SIGN_ID          ?=
 KEYCHAIN_PROFILE ?= lobby
 
-.PHONY: all test check app sign notarize dmg clean
+.PHONY: all test check app icon sign notarize dmg clean
+
+# Regenerates Resources/AppIcon.icns from Resources/makeicon.swift.
+icon:
+	xcrun swift Resources/makeicon.swift
+	rm -rf /tmp/$(APP).iconset && mkdir -p /tmp/$(APP).iconset
+	@for s in 16 32 128 256 512; do \
+		sips -z $$s $$s Resources/icon-1024.png \
+			--out /tmp/$(APP).iconset/icon_$${s}x$${s}.png >/dev/null; \
+		d=$$((s*2)); \
+		sips -z $$d $$d Resources/icon-1024.png \
+			--out /tmp/$(APP).iconset/icon_$${s}x$${s}@2x.png >/dev/null; \
+	done
+	iconutil -c icns /tmp/$(APP).iconset -o Resources/AppIcon.icns
 
 all: test app
 

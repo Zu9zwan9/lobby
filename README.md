@@ -4,8 +4,6 @@ Your Mac says the Wi-Fi is connected. Nothing loads. No login page appears.
 
 Lobby finds the login page and hands it to you.
 
-![menu bar screenshot placeholder](docs/screenshot.png)
-
 ## The bug, captured at 35,000 feet
 
 On a WestJet flight in September 2026, macOS reported a healthy connection and
