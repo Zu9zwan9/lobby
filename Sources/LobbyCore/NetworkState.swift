@@ -67,31 +67,6 @@ public enum NetworkState {
         return ["utun", "ipsec", "ppp", "tap", "tun"].contains { i.hasPrefix($0) }
     }
 
-    // MARK: Wi-Fi address
-
-    /// True when the MAC in use has the locally-administered bit set, which is
-    /// what macOS does for a Private Wi-Fi Address. Reading the per-SSID setting
-    /// itself needs root; observing its effect does not.
-    public static func macIsRandomized(interface: String? = nil) -> Bool {
-        guard let want = interface ?? primaryInterface() else { return false }
-        var head: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&head) == 0, let start = head else { return false }
-        defer { freeifaddrs(head) }
-
-        for ptr in sequence(first: start, next: { $0.pointee.ifa_next }) {
-            guard String(cString: ptr.pointee.ifa_name) == want,
-                  let addr = ptr.pointee.ifa_addr,
-                  addr.pointee.sa_family == UInt8(AF_LINK) else { continue }
-            let dl = UnsafeRawPointer(addr).assumingMemoryBound(to: sockaddr_dl.self)
-            guard dl.pointee.sdl_alen == 6 else { continue }
-            let first = withUnsafeBytes(of: dl.pointee.sdl_data) { raw -> UInt8 in
-                raw[Int(dl.pointee.sdl_nlen)]
-            }
-            return first & 0x02 != 0
-        }
-        return false
-    }
-
     // MARK: Privacy and captive settings
 
     /// iCloud Private Relay, system-wide. The per-network "Limit IP Address

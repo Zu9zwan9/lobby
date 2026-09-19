@@ -21,34 +21,27 @@ public struct Observations: Sendable, Equatable {
     public var tunnelOwnsDefaultRoute = false
     /// iCloud Private Relay is enabled system-wide.
     public var privateRelayEnabled = false
-    /// The Wi-Fi MAC has the locally-administered bit set, so it is randomized.
-    public var macIsRandomized = false
     /// Captive network support was switched off in com.apple.captive.control.
     public var captiveAssistantDisabled = false
 
     public init() {}
 }
 
-/// RFC 8908 Captive Portal API response.
+/// RFC 8908 Captive Portal API response. The spec also carries `venue-info-url`
+/// and `seconds-remaining`; neither changes what Lobby tells the user, so they
+/// are not decoded. Add them when a feature needs them.
 public struct CapportStatus: Sendable, Equatable, Decodable {
     public let captive: Bool
     public let userPortalURL: URL?
-    public let venueInfoURL: URL?
-    public let secondsRemaining: Int?
 
     enum CodingKeys: String, CodingKey {
         case captive
         case userPortalURL = "user-portal-url"
-        case venueInfoURL = "venue-info-url"
-        case secondsRemaining = "seconds-remaining"
     }
 
-    public init(captive: Bool, userPortalURL: URL? = nil,
-                venueInfoURL: URL? = nil, secondsRemaining: Int? = nil) {
+    public init(captive: Bool, userPortalURL: URL? = nil) {
         self.captive = captive
         self.userPortalURL = userPortalURL
-        self.venueInfoURL = venueInfoURL
-        self.secondsRemaining = secondsRemaining
     }
 }
 
@@ -80,8 +73,6 @@ public enum PortalEvidence: Sendable, Equatable {
     case capportAPI
     /// The gateway redirected a plain HTTP request to a login page.
     case gatewayRedirect
-    /// Apple's probe reported success from a stale cache. Corroborating only.
-    case forgedProbe(skewSeconds: TimeInterval)
 }
 
 /// Skew beyond this means the probe response came from a cache, not from Apple.
@@ -107,9 +98,16 @@ public func diagnose(_ o: Observations) -> Recommendation {
     // 4. Cause B. We resolve somewhere the gateway cannot intercept, so it can
     //    never redirect us. Note this is checked BEFORE cause A: setting a public
     //    resolver here is the popular advice and it makes things worse.
-    if !o.dhcpDNS.isEmpty, !o.effectiveDNS.isEmpty,
-       Set(o.effectiveDNS).isDisjoint(with: Set(o.dhcpDNS)) {
-        return .restoreNetworkDNS(inUse: o.effectiveDNS, offered: o.dhcpDNS)
+    //
+    //    Compare v4 to v4. dhcpDNS comes from DHCPv4 option 6 and is v4 by
+    //    construction, while effectiveDNS mixes in v6 resolvers learned from
+    //    router advertisements. On an ordinary dual-stack network those two sets
+    //    are disjoint with nothing wrong, and comparing across families accuses
+    //    the user of an override they never made.
+    let effectiveV4 = o.effectiveDNS.filter { $0.contains(".") }
+    if !o.dhcpDNS.isEmpty, !effectiveV4.isEmpty,
+       Set(effectiveV4).isDisjoint(with: Set(o.dhcpDNS)) {
+        return .restoreNetworkDNS(inUse: effectiveV4, offered: o.dhcpDNS)
     }
 
     // 5. Cause A. The lease offered nothing to resolve with. Opposite fix.
@@ -135,11 +133,6 @@ public func diagnose(_ o: Observations) -> Recommendation {
         if o.privateRelayEnabled { return .disablePrivateRelay }
         return .openNeverSSL
     }
-
-    // A randomized MAC is recorded in Observations for support output, but it is
-    // deliberately NOT a recommendation: Lobby cannot tell whether a given portal
-    // binds sessions to the MAC, so advising on it would nag every user on every
-    // network. Revisit when we track repeat portal hits per SSID.
 
     if o.appleProbeSucceeded == true { return .connected }
     return .undetermined

@@ -40,8 +40,6 @@ public extension Recommendation {
                 detail = "This network says you still need to sign in, even though macOS thinks you're already online."
             case .gatewayRedirect:
                 detail = "The router is sending every page to a sign-in screen. macOS didn't show it to you."
-            case .forgedProbe:
-                detail = "The network told macOS you were online when you weren't. Here's the real sign-in page."
             }
             return Advice(title: "Sign-in page found", detail: detail,
                           actionTitle: "Open sign-in page", action: .open(url),

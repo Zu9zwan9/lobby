@@ -12,6 +12,8 @@ struct LobbyApp: App {
         MenuBarExtra {
             MenuContent(model: model)
         } label: {
+            // The glyph is the whole status report for someone who never opens
+            // the panel, so it changes shape, not just colour.
             Image(systemName: model.advice.needsAttention
                   ? "wifi.exclamationmark" : "wifi")
         }
@@ -24,6 +26,7 @@ struct LobbyApp: App {
 final class AppModel {
     private(set) var advice: Advice = Recommendation.connected.advice
     private(set) var checking = false
+
     var launchAtLogin: Bool {
         get { SMAppService.mainApp.status == .enabled }
         set {
@@ -54,8 +57,7 @@ final class AppModel {
     func check(notify: Bool) async {
         checking = true
         defer { checking = false }
-        let recommendation = await Inspector.check()
-        advice = recommendation.advice
+        advice = await Inspector.check().advice
         guard notify, advice.needsAttention else { return }
 
         // One notification per distinct problem, so rejoining the same broken
@@ -98,28 +100,92 @@ final class AppModel {
 
 struct MenuContent: View {
     @Bindable var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Critically damped, response 0.4. Apple's default for a move that carried
+    /// no momentum of its own: it settles without overshoot, which is what a
+    /// status panel wants. Bounce belongs to gestures, and there are none here.
+    private var settle: Animation { .spring(duration: 0.4, bounce: 0) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(model.advice.title).font(.headline)
-            Text(model.advice.detail)
-                .font(.callout).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let title = model.advice.actionTitle {
-                Button(title) { model.perform() }
-                    .buttonStyle(.borderedProminent)
-            }
-
-            Divider()
-            Button(model.checking ? "Checking..." : "Check again") {
-                Task { await model.check(notify: false) }
-            }
-            .disabled(model.checking)
-            Toggle("Open at login", isOn: $model.launchAtLogin)
-            Button("Quit Lobby") { NSApplication.shared.terminate(nil) }
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            detail
+            if let title = model.advice.actionTitle { primaryAction(title) }
+            footer
         }
-        .padding(14)
-        .frame(width: 320)
+        .padding(16)
+        .frame(width: 308)
+        .animation(reduceMotion ? nil : settle, value: model.advice)
+        .animation(reduceMotion ? nil : settle, value: model.checking)
+    }
+
+    // Symbol and title share a row so the status maps onto the words it
+    // describes rather than floating above them.
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 9) {
+            Image(systemName: model.advice.needsAttention
+                  ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(model.advice.needsAttention ? .orange : .green)
+                .font(.system(size: 15, weight: .semibold))
+                .accessibilityHidden(true)
+
+            Text(model.advice.title)
+                // Large text reads too loose at default tracking, so tighten it.
+                .font(.system(.title3, weight: .semibold))
+                .tracking(-0.2)
+                .lineSpacing(-1)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var detail: some View {
+        Text(model.advice.detail)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func primaryAction(_ title: String) -> some View {
+        Button(title) { model.perform() }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
+            .keyboardShortcut(.defaultAction)
+    }
+
+    // Secondary controls recede. Only one thing on this panel is the point, and
+    // giving Quit the same weight as the fix would say otherwise.
+    private var footer: some View {
+        HStack(spacing: 10) {
+            Button {
+                Task { await model.check(notify: false) }
+            } label: {
+                HStack(spacing: 5) {
+                    if model.checking {
+                        ProgressView().controlSize(.small).scaleEffect(0.7)
+                    }
+                    Text(model.checking ? "Checking" : "Check again")
+                }
+            }
+            .buttonStyle(.link)
+            .disabled(model.checking)
+
+            Spacer()
+
+            Menu {
+                Toggle("Open at login", isOn: $model.launchAtLogin)
+                Divider()
+                Button("Quit Lobby") { NSApplication.shared.terminate(nil) }
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 22)
+            .accessibilityLabel("More options")
+        }
+        .font(.callout)
     }
 }

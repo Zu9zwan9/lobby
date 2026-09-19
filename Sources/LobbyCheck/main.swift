@@ -18,7 +18,6 @@ print("""
       effective dns    : \(o.effectiveDNS.joined(separator: ", "))
       tunnel primary   : \(o.tunnelOwnsDefaultRoute)
       private relay    : \(o.privateRelayEnabled)
-      randomized mac   : \(o.macIsRandomized)
       cna disabled     : \(o.captiveAssistantDisabled)
 
       \(r.advice.title)

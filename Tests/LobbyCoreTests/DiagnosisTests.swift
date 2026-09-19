@@ -52,6 +52,28 @@ final class DiagnosisTests: XCTestCase {
         XCTAssertEqual(diagnose(obs { _ in }), .setPublicDNS)
     }
 
+    // Regression: DHCPv4 option 6 is v4-only, but the effective resolver list
+    // picks up v6 servers from router advertisements. Comparing across families
+    // made an ordinary dual-stack network look like a deliberate DNS override.
+    func testIPv6ResolverDoesNotLookLikeAnOverride() {
+        let o = obs {
+            $0.dhcpDNS = ["10.1.0.1"]
+            $0.effectiveDNS = ["10.1.0.1", "fd38:9952:5ece:10::1"]
+            $0.appleProbeSucceeded = true
+        }
+        XCTAssertEqual(diagnose(o), .connected)
+    }
+
+    // And with no v4 resolver in effect at all, still not an override.
+    func testIPv6OnlyResolverIsNotAnOverride() {
+        let o = obs {
+            $0.dhcpDNS = ["10.1.0.1"]
+            $0.effectiveDNS = ["fd38:9952:5ece:10::1"]
+            $0.appleProbeSucceeded = true
+        }
+        XCTAssertEqual(diagnose(o), .connected)
+    }
+
     // Overlapping resolvers are not an override, they are normal.
     func testMatchingDNSIsNotAnOverride() {
         let o = obs {
@@ -115,7 +137,6 @@ final class DiagnosisTests: XCTestCase {
         let status = try JSONDecoder().decode(CapportStatus.self, from: json)
         XCTAssertFalse(status.captive)
         XCTAssertEqual(status.userPortalURL?.absoluteString, "https://wifi.westjet.com")
-        XCTAssertNil(status.secondsRemaining)
     }
 
     // Every recommendation must produce something a non-technical user can act on.

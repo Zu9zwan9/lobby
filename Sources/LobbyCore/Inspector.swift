@@ -18,29 +18,30 @@ public enum Inspector {
     }
 
     private struct Fetch {
-        let status: Int
         let body: String
         let finalURL: URL?
         let serverDate: Date?
     }
+
+    /// RFC 9110 date format. DateFormatter is expensive to build, and this runs
+    /// on every network change, so it is created once.
+    private static let httpDate: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "GMT")
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return f
+    }()
 
     private static func fetch(_ url: URL, accept: String? = nil) async -> Fetch? {
         var req = URLRequest(url: url)
         if let accept { req.setValue(accept, forHTTPHeaderField: "Accept") }
         guard let (data, response) = try? await session().data(for: req),
               let http = response as? HTTPURLResponse else { return nil }
-        var date: Date?
-        if let raw = http.value(forHTTPHeaderField: "Date") {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = TimeZone(identifier: "GMT")
-            f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-            date = f.date(from: raw)
-        }
-        return Fetch(status: http.statusCode,
-                     body: String(data: data.prefix(4096), encoding: .utf8) ?? "",
+        return Fetch(body: String(data: data.prefix(4096), encoding: .utf8) ?? "",
                      finalURL: http.url,
-                     serverDate: date)
+                     serverDate: http.value(forHTTPHeaderField: "Date")
+                         .flatMap(httpDate.date(from:)))
     }
 
     /// Gather everything, cheapest and most definitive first.
@@ -51,7 +52,6 @@ public enum Inspector {
         o.effectiveDNS = NetworkState.effectiveDNS()
         o.tunnelOwnsDefaultRoute = NetworkState.tunnelOwnsDefaultRoute()
         o.privateRelayEnabled = NetworkState.privateRelayEnabled()
-        o.macIsRandomized = NetworkState.macIsRandomized()
         o.captiveAssistantDisabled = NetworkState.captiveAssistantDisabled()
         o.capportAPI = NetworkState.capportAPI()
 
