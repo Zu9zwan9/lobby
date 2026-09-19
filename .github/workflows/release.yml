@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      SIGN_ID: "Developer ID Application: BBMM TECHNOLOGIES INC. (KSDM65552F)"
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Makefile names the DMG from Info.plist, not from the tag. If the two
+      # disagree you get a release whose file says one version and whose tag says
+      # another, and you find out after notarization. Fail here instead.
+      - name: Tag must match Info.plist
+        run: |
+          set -euo pipefail
+          PLIST=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Resources/Info.plist)
+          if [ "$PLIST" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match Info.plist version $PLIST"
+            exit 1
+          fi
+
+      - name: Test
+        run: swift test
+
+      # A throwaway keychain, unlocked for the life of the job. Never touch the
+      # runner's default keychain: it is shared with other steps and actions.
+      - name: Import signing certificate
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          echo -n "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+
+          # Without this, codesign blocks on a UI prompt that never arrives and
+          # the job hangs until it times out. This is the step people miss.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+
+          # Put it first in the search list so codesign finds the identity,
+          # and keep the login keychain present for everything else.
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Build, sign, notarize
+        run: make notarize
+
+      - name: Verify the artifact a user will actually download
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          spctl -a -vvv -t install "build/Lobby-$VERSION.dmg"
+          xcrun stapler validate "build/Lobby-$VERSION.dmg"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: build/Lobby-*.dmg
+          generate_release_notes: true
+
+      - name: Remove the keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true

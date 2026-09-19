@@ -56,11 +56,17 @@ dmg: sign
 	hdiutil create -volname "$(APP)" -srcfolder $(BUNDLE) -ov -format UDZO \
 		build/$(APP)-$(VERSION).dmg
 
-# Requires a stored credential profile:
+# Two ways in, one target. Locally you store a credential profile once:
 #   xcrun notarytool store-credentials lobby --apple-id ... --team-id ... --password <app-specific>
+# In CI there is no keychain profile, so APPLE_ID/APPLE_APP_PASSWORD/TEAM_ID are
+# passed instead. Keeping both behind one target means CI and your Mac cannot
+# drift apart.
+NOTARY_AUTH := $(if $(APPLE_ID),\
+	--apple-id "$(APPLE_ID)" --team-id "$(TEAM_ID)" --password "$(APPLE_APP_PASSWORD)",\
+	--keychain-profile "$(KEYCHAIN_PROFILE)")
+
 notarize: dmg
-	xcrun notarytool submit build/$(APP)-$(VERSION).dmg \
-		--keychain-profile $(KEYCHAIN_PROFILE) --wait
+	xcrun notarytool submit build/$(APP)-$(VERSION).dmg $(NOTARY_AUTH) --wait
 	xcrun stapler staple build/$(APP)-$(VERSION).dmg
 	@echo "notarized build/$(APP)-$(VERSION).dmg"
 
